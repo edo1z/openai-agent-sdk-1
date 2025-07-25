@@ -10,7 +10,6 @@ from typing import List, Dict, Any, Optional
 from agents import Agent, Runner, SQLiteSession
 from dotenv import load_dotenv
 import logfire
-from logfire import ScrubbingOptions, ScrubMatch
 from conversation_history import ConversationHistoryLoader
 from session_builder import SessionBuilder
 from advanced_session_builder import AdvancedSessionBuilder
@@ -26,21 +25,11 @@ if os.getenv("LANGFUSE_PUBLIC_KEY") and os.getenv("LANGFUSE_SECRET_KEY"):
     os.environ["OTEL_EXPORTER_OTLP_ENDPOINT"] = os.environ.get("LANGFUSE_HOST", "https://cloud.langfuse.com") + "/api/public/otel"
     os.environ["OTEL_EXPORTER_OTLP_HEADERS"] = f"Authorization=Basic {LANGFUSE_AUTH}"
 
-def scrubbing_callback(match: ScrubMatch):
-    """Langfuseのsession IDをスクラビングから除外"""
-    if (
-        match.path == ("attributes", "langfuse.session.id")
-        and match.pattern_match.group(0) == "session"
-    ):
-        # 元の値を返してスクラビングを防ぐ
-        return match.value
-    # Noneを返す（暗黙的）場合はスクラビングされる
-
 # Langfuse統合をセットアップ
 logfire.configure(
     service_name='expert-agent-system',
     send_to_logfire=False,
-    scrubbing=ScrubbingOptions(callback=scrubbing_callback)  # カスタムスクラビング
+    scrubbing=False  # 会話履歴の復元を可能にするためスクラビングを無効化
 )
 logfire.instrument_openai_agents()
 
