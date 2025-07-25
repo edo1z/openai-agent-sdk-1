@@ -1,5 +1,12 @@
+# OpenAI Agent SDK
 openai-agents
+
+# YAML設定ファイル読み込み
 pyyaml
-pydantic
-langfuse
-python-dotenv 
+
+# Langfuse統合（Logfire経由）
+pydantic-ai[logfire]
+nest_asyncio
+
+# 開発用ツール（オプション）
+python-dotenv  # 環境変数管理

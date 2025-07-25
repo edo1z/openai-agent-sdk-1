@@ -1,12 +1,33 @@
 import asyncio
 import yaml
 import uuid
+import os
+import base64
 from typing import List, Dict, Any
 from agents import Agent, Runner, SQLiteSession
 from dotenv import load_dotenv
-from log import langfuse_logger
+import logfire
 
+# 環境変数を読み込む
 load_dotenv()
+
+# OpenTelemetryエンドポイントをLangfuseに設定
+if os.getenv("LANGFUSE_PUBLIC_KEY") and os.getenv("LANGFUSE_SECRET_KEY"):
+    # Build Basic Auth header
+    LANGFUSE_AUTH = base64.b64encode(
+        f"{os.environ.get('LANGFUSE_PUBLIC_KEY')}:{os.environ.get('LANGFUSE_SECRET_KEY')}".encode()
+    ).decode()
+    
+    # Configure OpenTelemetry endpoint & headers
+    os.environ["OTEL_EXPORTER_OTLP_ENDPOINT"] = os.environ.get("LANGFUSE_HOST", "https://cloud.langfuse.com") + "/api/public/otel"
+    os.environ["OTEL_EXPORTER_OTLP_HEADERS"] = f"Authorization=Basic {LANGFUSE_AUTH}"
+
+# Langfuse統合をセットアップ
+logfire.configure(
+    service_name='expert-agent-system',
+    send_to_logfire=False  # Logfireには送信せず、Langfuseのみに送信
+)
+logfire.instrument_openai_agents()
 
 def load_experts_config(file_path: str = "experts.yaml") -> Dict[str, Any]:
     with open(file_path, 'r', encoding='utf-8') as f:
@@ -62,10 +83,6 @@ async def main():
     # SQLiteSessionを作成（インメモリ）
     session = SQLiteSession(session_id)
     
-    # ターン数をカウント
-    turn_count = 0
-    first_input = True
-    
     while True:
         # ユーザー入力を取得
         user_input = input("\nあなた: ").strip()
@@ -77,13 +94,8 @@ async def main():
         if not user_input:
             continue
         
-        # 最初の入力時にLangfuseセッションを開始
-        if first_input:
-            langfuse_logger.start_session(session_id, initial_input=user_input)
-            first_input = False
-        
         try:
-            # エージェントを実行
+            # エージェントを実行（自動的にトレースされる）
             print("\n専門家が回答を準備中...\n")
             result = await Runner.run(
                 triage_agent,
@@ -91,32 +103,15 @@ async def main():
                 session=session
             )
             
-            # 会話ターンを記録（ユーザー入力とエージェント応答をペアで）
-            # TODO: 実際の会話履歴やプロンプトを取得する方法を検討
-            langfuse_logger.log_turn(
-                user_input=user_input,
-                agent_response=result.final_output,
-                agent_name="Expert Agent"
-            )
-            
-            turn_count += 1
-            
             # 応答を表示
             print(f"\n専門家の回答:\n{result.final_output}")
             
             # セッション情報を表示（デバッグ用）
             print(f"\n[セッションID: {session_id}]")
-            
+                
         except Exception as e:
             print(f"\nエラーが発生しました: {e}")
             continue
-    
-    # ループ終了時にLangfuseセッションを終了
-    langfuse_logger.end_session(total_turns=turn_count)
 
 if __name__ == "__main__":
-    try:
-        asyncio.run(main())
-    finally:
-        # Langfuseのバッファをフラッシュ
-        langfuse_logger.flush()
+    asyncio.run(main())
