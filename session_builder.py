@@ -16,20 +16,16 @@ class SessionBuilder:
         # インメモリのSQLiteSessionを作成
         session = SQLiteSession(session_id)
 
-        # Langfuseから履歴を取得
+        # Langfuseから履歴を取得（1回のAPI呼び出し）
         loader = ConversationHistoryLoader()
-        traces = loader.get_session_traces(session_id)
+        conversation = loader.extract_conversation_history_direct(session_id)
 
-        if not traces:
+        if not conversation:
             print("過去の会話が見つかりませんでした")
             return session
-
-        # 会話履歴を抽出
-        conversation = loader.extract_conversation_history(traces)
         
         # デバッグ情報
         print(f"\n=== セッション復元デバッグ情報 ===")
-        print(f"取得したトレース数: {len(traces)}")
         print(f"抽出したメッセージ数: {len(conversation)}")
 
         # 会話履歴をSessionに追加

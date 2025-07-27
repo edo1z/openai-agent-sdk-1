@@ -82,12 +82,11 @@ async def main():
         session_id = resume_session_id
         print(f"\nセッション {session_id} を再開します...")
         
-        # 会話履歴を取得
+        # 会話履歴を取得（1回のAPI呼び出しのみ）
         loader = ConversationHistoryLoader()
-        traces = loader.get_session_traces(session_id)
+        conversation = loader.extract_conversation_history_direct(session_id)
         
-        if traces:
-            conversation = loader.extract_conversation_history(traces)
+        if conversation:
             print(f"\n過去の会話（{len(conversation)}メッセージ）を読み込みました:")
             
             # 会話履歴をより詳しく表示（最後の3往復 = 6メッセージ）

@@ -127,19 +127,14 @@ class ConversationHistoryLoader:
             print(f"Error fetching observations: {response.status_code}")
             return []
     
-    def extract_conversation_history(self, traces: List[Dict]) -> List[Dict[str, str]]:
-        """セッションから会話履歴を抽出（最適化版）"""
-        
-        # tracesから最初のセッションIDを取得
-        if not traces:
-            return []
-        
-        session_id = traces[0].get("sessionId")
-        if not session_id:
-            return []
+    def extract_conversation_history_direct(self, session_id: str) -> List[Dict[str, str]]:
+        """セッションIDから直接会話履歴を抽出（1回のAPI呼び出し）"""
         
         # セッションの全observationsを一括取得
         observations = self.get_session_observations(session_id)
+        
+        if not observations:
+            return []
         
         # observationsを時系列順にソート
         sorted_obs = sorted(observations, key=lambda x: x.get("startTime", ""))
@@ -185,6 +180,17 @@ class ConversationHistoryLoader:
             msg.pop("trace_id", None)
         
         return conversation
+    
+    def extract_conversation_history(self, traces: List[Dict]) -> List[Dict[str, str]]:
+        """トレースから会話履歴を抽出（後方互換性）"""
+        if not traces:
+            return []
+        
+        session_id = traces[0].get("sessionId")
+        if not session_id:
+            return []
+        
+        return self.extract_conversation_history_direct(session_id)
     
     def format_for_agent(self, conversation: List[Dict[str, str]]) -> str:
         """エージェントに渡すための会話履歴をフォーマット"""
