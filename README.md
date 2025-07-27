@@ -2,13 +2,7 @@
 
 ## 背景
 
-OpenAI Agents SDKを使用してチャットシステムを構築する際、会話の中断・再開機能は重要な要件でした。特に以下のようなユースケースを想定していました：
-
-- WebSocketベースのリアルタイム会議システム
-- 複数ユーザーが参加可能な環境
-- 接続切れ時の2分待機後のセッション破棄
-- 会話履歴の永続化と復元
-
+OpenAI Agents SDKを使用してチャットシステムを構築する際、会話の中断・再開機能は重要な要件でした。
 当初、「Langfuseから会話履歴を復元する」というお題から始まりました。
 
 ## やってみたこと
@@ -17,12 +11,11 @@ OpenAI Agents SDKを使用してチャットシステムを構築する際、会
 
 最初に、Langfuseの`/api/public/observations`エンドポイントを使用して、sessionIdで会話履歴を取得しようとしました。
 
-### 2. セキュリティ問題の発見
+### 2. API制限の発見
 
-実装中に重大な問題を発見：
-- observations APIに`sessionId`パラメータを渡しても、他のセッションのデータが混入
-- 143件のメッセージを取得したが、実際のセッションは8件のみ
-- 他のユーザーのデータが見えてしまう潜在的なセキュリティリスク
+observations APIの制限が判明：
+- `/api/public/observations?sessionId=xxx`は、sessionIdでのフィルタリングに対応していない
+- 全データから最新100件を返すだけで、指定したセッションのデータのみを取得できない
 
 ### 3. Langfuse APIドキュメントの調査
 
@@ -37,6 +30,9 @@ OpenAI Agents SDKを使用してチャットシステムを構築する際、会
 - 初期：N+1 API呼び出し（1回でtraces、N回で各trace のobservations）
 - 改善：2 API呼び出し（traces + 全observations）
 - 最終：traces経由での正しいフィルタリング実装
+  1. `/api/public/traces?sessionId=xxx`でセッションのトレース一覧を取得
+  2. 各トレースに対して`/api/public/observations?traceId=xxx`でobservationsを取得
+  3. 取得した全observationsから会話履歴を構築
 
 ### 5. データ構造の課題
 
