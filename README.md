@@ -5,11 +5,15 @@
 OpenAI Agents SDKを使用してチャットシステムを構築する際、会話の中断・再開機能は重要な要件でした。
 当初、「Langfuseから会話履歴を復元する」というお題から始まりました。
 
+### 参考リンク
+- [Langfuse - OpenAI Agents統合ガイド](https://langfuse.com/integrations/frameworks/openai-agents)
+- [OpenAI Agents - カスタムセッション実装](https://openai.github.io/openai-agents-python/sessions/#custom-memory-implementations)
+
 ## やってみたこと
 
 ### 1. Langfuse APIを使った会話履歴の取得（初期アプローチ）
 
-最初に、Langfuseの`/api/public/observations`エンドポイントを使用して、sessionIdで会話履歴を取得しようとしました。
+最初に、[Langfuse統合](https://langfuse.com/integrations/frameworks/openai-agents)でログが自動保存されているデータから、`/api/public/observations`エンドポイントを使用して、sessionIdで会話履歴を取得しようとしました。
 
 ### 2. API制限の発見
 
@@ -82,7 +86,7 @@ Langfuseのデータ構造は複雑で多様：
 
 ### 実装の成果
 
-OpenAI Agents SDKのSession protocolに準拠したRedisSession実装により：
+[OpenAI Agents SDKのSession protocol](https://openai.github.io/openai-agents-python/sessions/#custom-memory-implementations)に準拠したRedisSession実装により：
 
 - **シンプル**: セッションIDだけで完全復元
 - **高速**: 直接的なデータアクセス
