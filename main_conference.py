@@ -62,7 +62,7 @@ def create_expert_agents(config: Dict[str, Any]) -> List[Agent]:
     return expert_agents
 
 
-async def save_message(session: RedisSession, role: str, content: str, speaker: str = None):
+async def save_message(session: RedisSession, role: str, content: str, speaker: Optional[str] = None):
     """発言をセッションに保存"""
     message = {
         "role": role,
@@ -178,17 +178,12 @@ async def main():
                 with logfire.span("facilitator-response") as span:
                     span.set_attribute("langfuse.session.id", session_id)
                     
-                    # 一時的なセッションを作成（司会者の応答用）
-                    temp_session = await create_redis_session(f"temp-{uuid.uuid4()}", restore_existing=False)
-                    
+                    # 会話履歴なしで司会者を実行（司会者は現在の質問のみに基づいて判断）
                     result = await Runner.run(
                         facilitator,
                         user_input,
-                        session=temp_session
+                        session=None  # セッションを使わない
                     )
-                    
-                    await temp_session.clear_session()
-                    await temp_session.close()
                 
                 facilitator_response = result.final_output
                 
@@ -212,24 +207,20 @@ async def main():
                             span.set_attribute("langfuse.session.id", session_id)
                             span.set_attribute("expert.name", expert_name)
                             
-                            # 専門家用の一時セッション
-                            expert_temp_session = await create_redis_session(f"temp-expert-{uuid.uuid4()}", restore_existing=False)
-                            
-                            expert_result = await Runner.run(
-                                expert_dict[expert_name],
-                                question,
-                                session=expert_temp_session
-                            )
-                            
-                            await expert_temp_session.clear_session()
-                            await expert_temp_session.close()
+                            # 質問がある場合のみ実行
+                            if question:
+                                expert_result = await Runner.run(
+                                    expert_dict[expert_name],
+                                    question,
+                                    session=None  # セッションを使わない
+                                )
+                                
+                                expert_response = expert_result.final_output
                         
-                        expert_response = expert_result.final_output
-                        
-                        # 専門家の発言を表示・保存
-                        print(f"【{expert_name}】:")
-                        print(expert_response)
-                        await save_message(session, "assistant", expert_response, expert_name)
+                                # 専門家の発言を表示・保存
+                                print(f"【{expert_name}】:")
+                                print(expert_response)
+                                await save_message(session, "assistant", expert_response, expert_name)
                 
                 # TTLを延長
                 await session.extend_ttl()
