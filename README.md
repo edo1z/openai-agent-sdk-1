@@ -27,12 +27,12 @@ observations APIの制限が判明：
 ### 4. API最適化の試み
 
 複数のアプローチを試行：
-- 初期：N+1 API呼び出し（1回でtraces、N回で各trace のobservations）
-- 改善：2 API呼び出し（traces + 全observations）
-- 最終：traces経由での正しいフィルタリング実装
+- 試行1：`/api/public/observations?sessionId=xxx`（sessionIdフィルタが効かず失敗）
+- 試行2：N+1 API呼び出し
   1. `/api/public/traces?sessionId=xxx`でセッションのトレース一覧を取得
   2. 各トレースに対して`/api/public/observations?traceId=xxx`でobservationsを取得
   3. 取得した全observationsから会話履歴を構築
+- 結論：Langfuse APIの制限により、N+1問題は避けられない
 
 ### 5. データ構造の課題
 
