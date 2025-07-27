@@ -1,97 +1,100 @@
-# OpenAI Agents SDK - 専門家エージェントシステム
+# OpenAI Agents SDK - セッション永続化の探求
 
-## 概要
-OpenAI Agents SDKを使用した専門家エージェントシステムです。複数の専門家エージェントを設定し、ユーザーの質問に応じて最適な専門家が回答します。
+## 背景
 
-## 機能
+OpenAI Agents SDKを使用してチャットシステムを構築する際、会話の中断・再開機能は重要な要件でした。特に以下のようなユースケースを想定していました：
 
-### 基本機能
-- experts.yamlに応じた専門家エージェントの自動作成
-- ユーザの発言に応じて最適な専門家エージェントが回答する(handoffsを使う)
-- whileループで延々と繰り返せる
-- exitで終了
-- Langfuseにログ送信
+- WebSocketベースのリアルタイム会議システム
+- 複数ユーザーが参加可能な環境
+- 接続切れ時の2分待機後のセッション破棄
+- 会話履歴の永続化と復元
 
-### セッション管理
-- **SQLiteSession（ローカル）**: インメモリまたはファイルベースの会話履歴保存
-- **RedisSession（推奨）**: クラウド対応の永続的な会話履歴保存
-  - セッションの自動復元
-  - TTL（有効期限）管理
-  - スケーラブルな実装
+当初、LangfuseというLLM観測プラットフォームにログが送信されていたため、「Langfuseから会話履歴を復元すれば良いのでは？」というアイデアから始まりました。
 
-### 詳細仕様
-- session IDはuuidを毎回自動生成する（再開時は既存IDを使用）
-- RedisSessionでは7日間のデフォルトTTL（設定可能）
+## やってみたこと
 
-## セットアップ
+### 1. Langfuse APIを使った会話履歴の取得（初期アプローチ）
 
-### 1. 環境構築
+最初に、Langfuseの`/api/public/observations`エンドポイントを使用して、sessionIdで会話履歴を取得しようとしました。
 
-```bash
-uv venv
-source .venv/bin/activate
-uv pip install -r requirements.txt
-cp .env.example .env
-```
+### 2. セキュリティ問題の発見
 
-### 2. 環境変数の設定
+実装中に重大な問題を発見：
+- observations APIに`sessionId`パラメータを渡しても、他のセッションのデータが混入
+- 143件のメッセージを取得したが、実際のセッションは8件のみ
+- 他のユーザーのデータが見えてしまう潜在的なセキュリティリスク
 
-`.env`ファイルを編集：
+### 3. Langfuse APIドキュメントの調査
 
-```bash
-# 必須
-OPENAI_API_KEY=your-openai-api-key
+公式ドキュメントとGitHubディスカッションを調査した結果：
+- **observations APIは直接sessionIdでのフィルタリングをサポートしていない**
+- 推奨される回避策：traces経由でobservationsを取得
+- これにより、N+1問題が発生（トレースごとにobservationsを取得）
 
-# Langfuse（オプション）
-LANGFUSE_SECRET_KEY=your-secret-key
-LANGFUSE_PUBLIC_KEY=your-public-key
-LANGFUSE_HOST=https://cloud.langfuse.com
+### 4. API最適化の試み
 
-# Redis（RedisSession使用時）
-REDIS_URL=redis://localhost:6379
-REDIS_SESSION_TTL=604800  # 7日間
-```
+複数のアプローチを試行：
+- 初期：N+1 API呼び出し（1回でtraces、N回で各trace のobservations）
+- 改善：2 API呼び出し（traces + 全observations）
+- 最終：traces経由での正しいフィルタリング実装
 
-### 3. Redisのセットアップ（RedisSession使用時）
+### 5. データ構造の課題
 
-ローカルRedis:
-```bash
-# Docker
-docker run -d -p 6379:6379 redis:alpine
+Langfuseのデータ構造は複雑で多様：
+- logfire instrumentationによる特殊なデータ形式
+- GENERATIONタイプのinputフィールドに累積的な会話履歴
+- OpenAI API v2形式への対応（`type: "output_text"`）
+- scrubbingによるデータマスキング問題
 
-# または Homebrew (Mac)
-brew install redis
-brew services start redis
-```
+## やってみた結果・学んだこと
 
-クラウドRedis:
-- [Redis Cloud](https://redis.com/cloud/overview/)
-- [AWS ElastiCache](https://aws.amazon.com/elasticache/)
-- [Upstash](https://upstash.com/)
+### 技術的な学び
 
-## 使い方
+1. **Langfuse APIの制約**
+   - sessionIdでの直接フィルタリングが不可能
+   - API制限（limit最大100）
+   - データ取得の遅延（15-30秒）
 
-### SQLiteSession（ローカル）
-```bash
-python main.py
-```
+2. **データ構造の複雑性**
+   - Langfuseとagents SDKのSessionの構造が根本的に異なる
+   - 保存方法によってデータ形式が変わる（多様性の問題）
+   - 復元時の変換処理が複雑
 
-### RedisSession（推奨）
-```bash
-python main_redis.py
-```
+3. **パフォーマンスの観点**
+   - Langfuse API経由：複数回のHTTPリクエスト
+   - Redis直接アクセス：単一の高速アクセス
 
-### セッションの再開
-実行時にセッションIDを入力することで、過去の会話を復元できます：
-```
-既存のセッションを再開しますか？ セッションIDを入力（新規の場合はEnter）: d73a44e0-c425-4eac-b853-55a2ff1b1444
-```
+### 根本的な気づき
 
-## テスト
+**「そもそもSessionを消さずにそのまま使うのが圧倒的にシンプルで確実」**
 
-RedisSessionのテスト:
-```bash
-python test_redis_session.py
-```
+この気づきから、アプローチを大きく転換しました。
 
+## 最終的な解決策：RedisSession
 
+### なぜRedisか
+
+1. **SQLiteの限界**
+   - ローカルファイルベースでスケールが困難
+   - 分散環境での共有が不可能
+
+2. **Redisの利点**
+   - クラウド対応（Redis Cloud、AWS ElastiCache、Upstash等）
+   - 高速なインメモリアクセス
+   - TTL（有効期限）の自動管理
+   - 分散環境でのセッション共有
+
+### 実装の成果
+
+OpenAI Agents SDKのSession protocolに準拠したRedisSession実装により：
+
+- **シンプル**: セッションIDだけで完全復元
+- **高速**: 直接的なデータアクセス
+- **スケーラブル**: クラウド環境での水平スケール対応
+- **確実**: データ構造の変換不要、そのまま保存・復元
+
+## 結論
+
+Langfuseは優れた観測ツールですが、セッション永続化のためのストレージとしては適していませんでした。専用のセッションストレージ（Redis）を使用することで、よりシンプルで確実、かつスケーラブルな解決策を実現できました。
+
+この経験から、「適材適所」の重要性を改めて認識しました。観測は観測ツールに、永続化は永続化に特化したツールに任せることが、結果的に最もシンプルで保守性の高いシステムになります。
