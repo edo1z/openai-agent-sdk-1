@@ -26,7 +26,7 @@ if os.getenv("LANGFUSE_PUBLIC_KEY") and os.getenv("LANGFUSE_SECRET_KEY"):
 logfire.configure(
     service_name='expert-agent-system',
     send_to_logfire=False,  # Logfireには送信せず、Langfuseのみに送信
-    scrubbing=False  # 会話履歴の復元を可能にするためスクラビングを無効化
+    scrubbing=False  # SQLiteSession使用時はLangfuseからの復元が必要な場合があるため無効化
 )
 logfire.instrument_openai_agents()
 

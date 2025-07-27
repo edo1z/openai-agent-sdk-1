@@ -27,7 +27,8 @@ if os.getenv("LANGFUSE_PUBLIC_KEY") and os.getenv("LANGFUSE_SECRET_KEY"):
 logfire.configure(
     service_name='expert-agent-system',
     send_to_logfire=False,
-    scrubbing=False
+    # Redisから復元するため、Langfuseのデータマスキングを有効化（セキュリティ向上）
+    scrubbing=True
 )
 logfire.instrument_openai_agents()
 
