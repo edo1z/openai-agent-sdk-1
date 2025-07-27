@@ -1,0 +1,7 @@
+openai-agents
+openai
+python-dotenv
+pyyaml
+logfire
+httpx
+redis[hiredis]
