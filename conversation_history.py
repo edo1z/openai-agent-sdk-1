@@ -48,20 +48,95 @@ class ConversationHistoryLoader:
             print(f"Error fetching traces: {response.status_code}")
             return []
     
+    def get_trace_details(self, trace_id: str) -> Dict:
+        """特定のトレースの詳細を取得"""
+        
+        # Langfuse APIエンドポイント
+        url = f"{self.host}/api/public/traces/{trace_id}"
+        
+        # HTTPリクエスト
+        response = httpx.get(
+            url,
+            headers={
+                "Authorization": self.auth_header,
+                "Content-Type": "application/json"
+            }
+        )
+        
+        if response.status_code == 200:
+            return response.json()
+        else:
+            print(f"Error fetching trace details: {response.status_code}")
+            return {}
+    
+    def get_observations(self, trace_id: str) -> List[Dict]:
+        """トレースのobservationsを取得"""
+        
+        # Langfuse APIエンドポイント
+        url = f"{self.host}/api/public/observations"
+        
+        # クエリパラメータ
+        params = {
+            "traceId": trace_id,
+            "limit": 100
+        }
+        
+        # HTTPリクエスト
+        response = httpx.get(
+            url,
+            params=params,
+            headers={
+                "Authorization": self.auth_header,
+                "Content-Type": "application/json"
+            }
+        )
+        
+        if response.status_code == 200:
+            data = response.json()
+            return data.get("data", [])
+        else:
+            print(f"Error fetching observations: {response.status_code}")
+            return []
+    
     def extract_conversation_history(self, traces: List[Dict]) -> List[Dict[str, str]]:
         """トレースから会話履歴を抽出"""
         conversation = []
         
         for trace in traces:
-            # 入力と出力を抽出
-            if trace.get("input") and trace.get("output"):
+            trace_id = trace.get("id")
+            if not trace_id:
+                continue
+                
+            # 各トレースのobservationsを取得
+            observations = self.get_observations(trace_id)
+            
+            # observationsを時系列順にソート
+            sorted_obs = sorted(observations, key=lambda x: x.get("startTime", ""))
+            
+            # 各トレースでのユーザー入力とアシスタント応答を抽出
+            user_input = None
+            assistant_output = None
+            
+            for obs in sorted_obs:
+                # ユーザー入力を探す
+                if obs.get("input") and not user_input:
+                    user_input = obs["input"]
+                
+                # アシスタントの最終応答を探す（最後のGENERATIONを使用）
+                if obs.get("type") == "GENERATION" and obs.get("output"):
+                    assistant_output = obs["output"]
+            
+            # ペアを追加
+            if user_input:
                 conversation.append({
                     "role": "user",
-                    "content": trace["input"]
+                    "content": str(user_input)
                 })
+            
+            if assistant_output:
                 conversation.append({
-                    "role": "assistant", 
-                    "content": trace["output"]
+                    "role": "assistant",
+                    "content": str(assistant_output)
                 })
         
         return conversation
