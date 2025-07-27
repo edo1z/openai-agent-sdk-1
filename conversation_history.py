@@ -98,46 +98,91 @@ class ConversationHistoryLoader:
             print(f"Error fetching observations: {response.status_code}")
             return []
     
+    def get_session_observations(self, session_id: str) -> List[Dict]:
+        """セッションIDで全observationsを一括取得"""
+        
+        # Langfuse APIエンドポイント
+        url = f"{self.host}/api/public/observations"
+        
+        # クエリパラメータ
+        params = {
+            "sessionId": session_id,
+            "limit": 1000  # 十分な数を取得
+        }
+        
+        # HTTPリクエスト
+        response = httpx.get(
+            url,
+            params=params,
+            headers={
+                "Authorization": self.auth_header,
+                "Content-Type": "application/json"
+            }
+        )
+        
+        if response.status_code == 200:
+            data = response.json()
+            return data.get("data", [])
+        else:
+            print(f"Error fetching observations: {response.status_code}")
+            return []
+    
     def extract_conversation_history(self, traces: List[Dict]) -> List[Dict[str, str]]:
-        """トレースから会話履歴を抽出"""
+        """セッションから会話履歴を抽出（最適化版）"""
+        
+        # tracesから最初のセッションIDを取得
+        if not traces:
+            return []
+        
+        session_id = traces[0].get("sessionId")
+        if not session_id:
+            return []
+        
+        # セッションの全observationsを一括取得
+        observations = self.get_session_observations(session_id)
+        
+        # observationsを時系列順にソート
+        sorted_obs = sorted(observations, key=lambda x: x.get("startTime", ""))
+        
         conversation = []
         
-        for trace in traces:
-            trace_id = trace.get("id")
-            if not trace_id:
-                continue
-                
-            # 各トレースのobservationsを取得
-            observations = self.get_observations(trace_id)
+        # user-interactionスパンごとに会話を抽出
+        current_trace_id = None
+        user_input = None
+        
+        for obs in sorted_obs:
+            trace_id = obs.get("traceId")
             
-            # observationsを時系列順にソート
-            sorted_obs = sorted(observations, key=lambda x: x.get("startTime", ""))
+            # 新しいトレース（会話のターン）の開始
+            if trace_id != current_trace_id:
+                current_trace_id = trace_id
+                user_input = None
             
-            # 各トレースでのユーザー入力とアシスタント応答を抽出
-            user_input = None
-            assistant_output = None
-            
-            for obs in sorted_obs:
-                # ユーザー入力を探す
-                if obs.get("input") and not user_input:
-                    user_input = obs["input"]
-                
-                # アシスタントの最終応答を探す（最後のGENERATIONを使用）
-                if obs.get("type") == "GENERATION" and obs.get("output"):
-                    assistant_output = obs["output"]
-            
-            # ペアを追加
-            if user_input:
+            # ユーザー入力を取得
+            if obs.get("type") == "SPAN" and obs.get("name") == "user-interaction" and obs.get("input"):
+                user_input = obs["input"]
                 conversation.append({
                     "role": "user",
                     "content": str(user_input)
                 })
             
-            if assistant_output:
-                conversation.append({
-                    "role": "assistant",
-                    "content": str(assistant_output)
-                })
+            # アシスタントの最終応答を取得
+            elif obs.get("type") == "GENERATION" and obs.get("output"):
+                # 同じトレース内の最後のGENERATIONを使用
+                output = obs["output"]
+                # 既に同じトレースのアシスタント応答がある場合は更新
+                if conversation and conversation[-1].get("role") == "assistant" and conversation[-1].get("trace_id") == trace_id:
+                    conversation[-1]["content"] = str(output)
+                else:
+                    conversation.append({
+                        "role": "assistant",
+                        "content": str(output),
+                        "trace_id": trace_id  # デバッグ用
+                    })
+        
+        # trace_idを除去
+        for msg in conversation:
+            msg.pop("trace_id", None)
         
         return conversation
     
