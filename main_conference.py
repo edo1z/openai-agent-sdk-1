@@ -63,7 +63,10 @@ def create_expert_agents(config: Dict[str, Any]) -> List[Agent]:
 
 
 async def save_message(session: RedisSession, role: str, content: str, speaker: Optional[str] = None):
-    """発言をセッションに保存"""
+    """発言をセッションに保存（Runner.runが自動保存しない場合のみ使用）"""
+    # 注意: Runner.runを使用する場合、入力と出力は自動的に保存されるため、
+    # この関数は主に会話履歴の表示形式を調整する場合に使用する
+    
     # OpenAI APIの標準フォーマットに準拠
     message = {
         "role": role,
@@ -187,8 +190,8 @@ async def main():
                 continue
             
             try:
-                # ユーザーの発言を保存
-                await save_message(session, "user", user_input, "ユーザー")
+                # ユーザーの発言は Runner.run が自動的に保存するため、ここでは保存しない
+                # await save_message(session, "user", user_input, "ユーザー")
                 
                 print("\n" + "-"*50)
                 
@@ -227,7 +230,8 @@ async def main():
                     # 専門家への依頼がない場合はそのまま表示
                     print(facilitator_response)
                 
-                await save_message(session, "assistant", facilitator_response, "司会者")
+                # 司会者の応答は Runner.run が自動的に保存するため、ここでは保存しない
+                # await save_message(session, "assistant", facilitator_response, "司会者")
                 
                 if expert_request:
                     expert_name = expert_request.get("expert")
@@ -251,10 +255,11 @@ async def main():
                                 
                                 expert_response = expert_result.final_output
                         
-                                # 専門家の発言を表示・保存
+                                # 専門家の発言を表示
                                 print(f"【{expert_name}】:")
                                 print(expert_response)
-                                await save_message(session, "assistant", expert_response, expert_name)
+                                # 専門家の応答も Runner.run が自動的に保存するため、ここでは保存しない
+                                # await save_message(session, "assistant", expert_response, expert_name)
                 
                 # TTLを延長
                 await session.extend_ttl()
