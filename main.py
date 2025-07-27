@@ -189,7 +189,7 @@ async def main():
                     result = await Runner.run(
                         triage_agent,
                         user_input,
-                        session=session
+                        session=session  # type: ignore
                     )
                 
                 # 応答を表示

@@ -199,18 +199,35 @@ async def main():
                     result = await Runner.run(
                         facilitator,
                         user_input,
-                        session=session  # 会話履歴を含める
+                        session=session  # type: ignore  # 会話履歴を含める
                     )
                 
                 facilitator_response = result.final_output
                 
+                # 専門家への依頼をチェック（表示前に解析）
+                expert_request = facilitator.parse_expert_request(facilitator_response)
+                
                 # 司会者の発言を表示・保存
                 print("\n【司会者】:")
-                print(facilitator_response)
-                await save_message(session, "assistant", facilitator_response, "司会者")
+                if expert_request:
+                    # 専門家への依頼がある場合は、JSON部分を自然な日本語に変換
+                    expert_name = expert_request.get("expert")
+                    question = expert_request.get("question")
+                    
+                    # JSON部分より前のテキストを取得
+                    json_start = facilitator_response.find("【専門家指名】")
+                    if json_start > 0:
+                        pre_text = facilitator_response[:json_start].strip()
+                        if pre_text:
+                            print(pre_text)
+                    
+                    # 自然な日本語で専門家への依頼を表示
+                    print(f"\nでは、{expert_name}さん、{question}")
+                else:
+                    # 専門家への依頼がない場合はそのまま表示
+                    print(facilitator_response)
                 
-                # 専門家への依頼をチェック
-                expert_request = facilitator.parse_expert_request(facilitator_response)
+                await save_message(session, "assistant", facilitator_response, "司会者")
                 
                 if expert_request:
                     expert_name = expert_request.get("expert")
@@ -229,7 +246,7 @@ async def main():
                                 expert_result = await Runner.run(
                                     expert_dict[expert_name],
                                     question,
-                                    session=session  # 会話履歴を含める
+                                    session=session  # type: ignore  # 会話履歴を含める
                                 )
                                 
                                 expert_response = expert_result.final_output
