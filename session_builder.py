@@ -42,7 +42,7 @@ class SessionBuilder:
                         "content": [
                             {
                                 "text": msg["content"],
-                                "type": "text",  # "output_text"ではなく"text"を使用
+                                "type": "output_text",  # OpenAI API v2の正しい形式
                                 "annotations": [],
                             }
                         ],

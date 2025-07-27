@@ -107,7 +107,7 @@ class ConversationHistoryLoader:
         # クエリパラメータ
         params = {
             "sessionId": session_id,
-            "limit": 1000  # 十分な数を取得
+            "limit": 100  # API最大値
         }
         
         # HTTPリクエスト
@@ -125,59 +125,83 @@ class ConversationHistoryLoader:
             return data.get("data", [])
         else:
             print(f"Error fetching observations: {response.status_code}")
+            print(f"Response: {response.text}")
             return []
     
     def extract_conversation_history_direct(self, session_id: str) -> List[Dict[str, str]]:
-        """セッションIDから直接会話履歴を抽出（1回のAPI呼び出し）"""
+        """セッションIDから会話履歴を抽出（Traces経由で正しくフィルタリング）"""
         
-        # セッションの全observationsを一括取得
-        observations = self.get_session_observations(session_id)
+        # Langfuseの制限により、observations APIは直接sessionIdでフィルタできない
+        # 代わりにtraces経由でobservationsを取得する（公式推奨の方法）
         
-        if not observations:
+        # 1. まずセッションのトレースを取得
+        traces = self.get_session_traces(session_id)
+        if not traces:
             return []
         
-        # observationsを時系列順にソート
-        sorted_obs = sorted(observations, key=lambda x: x.get("startTime", ""))
+        all_observations = []
+        
+        # 2. 各トレースのobservationsを取得
+        for trace in traces:
+            trace_id = trace.get("id")
+            observations = self.get_observations(trace_id)
+            all_observations.extend(observations)
+        
+        # 3. observationsを時系列順にソート
+        sorted_obs = sorted(all_observations, key=lambda x: x.get("startTime", ""))
         
         conversation = []
+        processed_messages = set()  # 重複防止用
         
-        # user-interactionスパンごとに会話を抽出
-        current_trace_id = None
-        user_input = None
-        
+        # 4. GENERATIONタイプから会話を抽出
         for obs in sorted_obs:
-            trace_id = obs.get("traceId")
-            
-            # 新しいトレース（会話のターン）の開始
-            if trace_id != current_trace_id:
-                current_trace_id = trace_id
-                user_input = None
-            
-            # ユーザー入力を取得
-            if obs.get("type") == "SPAN" and obs.get("name") == "user-interaction" and obs.get("input"):
-                user_input = obs["input"]
-                conversation.append({
-                    "role": "user",
-                    "content": str(user_input)
-                })
-            
-            # アシスタントの最終応答を取得
-            elif obs.get("type") == "GENERATION" and obs.get("output"):
-                # 同じトレース内の最後のGENERATIONを使用
-                output = obs["output"]
-                # 既に同じトレースのアシスタント応答がある場合は更新
-                if conversation and conversation[-1].get("role") == "assistant" and conversation[-1].get("trace_id") == trace_id:
-                    conversation[-1]["content"] = str(output)
-                else:
-                    conversation.append({
-                        "role": "assistant",
-                        "content": str(output),
-                        "trace_id": trace_id  # デバッグ用
-                    })
+            if obs.get("type") == "GENERATION" and obs.get("input"):
+                messages = obs.get("input", [])
+                
+                # 各メッセージを処理
+                for msg in messages:
+                    if isinstance(msg, dict) and "content" in msg and "role" in msg:
+                        role = msg.get("role")
+                        content = msg.get("content")
+                        
+                        # システムメッセージはスキップ
+                        if role == "system":
+                            continue
+                        
+                        # メッセージのハッシュを作成（重複チェック用）
+                        msg_hash = f"{role}:{content}"
+                        
+                        # 新しいメッセージのみ追加
+                        if msg_hash not in processed_messages:
+                            processed_messages.add(msg_hash)
+                            conversation.append({
+                                "role": "user" if role == "user" else "assistant",
+                                "content": content
+                            })
         
-        # trace_idを除去
-        for msg in conversation:
-            msg.pop("trace_id", None)
+        # 5. 最新のGENERATIONのメッセージのみを保持（重複を除去）
+        # 各GENERATIONには累積的な会話履歴が含まれるため、最新のものが最も完全
+        if conversation:
+            # 最後のGENERATIONから抽出された会話履歴を返す
+            # これにより、古い重複データは自動的に除外される
+            final_conversation = []
+            seen_content = set()
+            
+            # 後ろから処理して、最新の状態を優先
+            for msg in reversed(conversation):
+                content_key = f"{msg['role']}:{msg['content']}"
+                if content_key not in seen_content:
+                    seen_content.add(content_key)
+                    final_conversation.insert(0, msg)
+            
+            # 指定されたセッションの会話のみを返す
+            # （最後のN個のメッセージが現在のセッションのもの）
+            trace_count = len(traces)
+            # 各トレースは通常2つのメッセージ（user + assistant）を含む
+            expected_messages = trace_count * 2
+            
+            # 最後のexpected_messages個を返す
+            return final_conversation[-expected_messages:] if len(final_conversation) > expected_messages else final_conversation
         
         return conversation
     
