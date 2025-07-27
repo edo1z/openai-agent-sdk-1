@@ -26,10 +26,15 @@ class SessionBuilder:
 
         # 会話履歴を抽出
         conversation = loader.extract_conversation_history(traces)
+        
+        # デバッグ情報
+        print(f"\n=== セッション復元デバッグ情報 ===")
+        print(f"取得したトレース数: {len(traces)}")
+        print(f"抽出したメッセージ数: {len(conversation)}")
 
         # 会話履歴をSessionに追加
         items_to_add = []
-        for msg in conversation:
+        for i, msg in enumerate(conversation):
             if msg["role"] == "user":
                 # ユーザーメッセージは単純な辞書形式
                 items_to_add.append({"role": "user", "content": msg["content"]})
@@ -41,23 +46,29 @@ class SessionBuilder:
                         "content": [
                             {
                                 "text": msg["content"],
-                                "type": "output_text",
+                                "type": "text",  # "output_text"ではなく"text"を使用
                                 "annotations": [],
-                                "logprobs": [],
                             }
                         ],
                         "type": "message",
                         "status": "complete",
-                        "id": f"msg_{len(items_to_add)}",  # 仮のID
+                        "id": f"msg_{i}",  # 順序を保持
                     }
                 )
 
         # セッションに履歴を追加
         if items_to_add:
-            await session.add_items(items_to_add)
-            print(
-                f"セッション {session_id} に {len(items_to_add)} 個のメッセージを復元しました"
-            )
+            try:
+                await session.add_items(items_to_add)
+                print(f"✓ セッションに {len(items_to_add)} 個のメッセージを復元しました")
+                
+                # 復元されたアイテムを確認
+                restored_items = await session.get_items()
+                print(f"✓ セッション内の総アイテム数: {len(restored_items)}")
+                
+            except Exception as e:
+                print(f"✗ セッション復元中にエラー: {e}")
+                print(f"  エラーの詳細: {type(e).__name__}")
 
         return session
 

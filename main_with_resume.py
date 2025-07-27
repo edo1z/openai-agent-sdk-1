@@ -12,7 +12,6 @@ from dotenv import load_dotenv
 import logfire
 from conversation_history import ConversationHistoryLoader
 from session_builder import SessionBuilder
-from advanced_session_builder import AdvancedSessionBuilder
 
 # 環境変数を読み込む
 load_dotenv()
@@ -91,16 +90,26 @@ async def main():
             conversation = loader.extract_conversation_history(traces)
             print(f"\n過去の会話（{len(conversation)}メッセージ）を読み込みました:")
             
-            # 直近の会話を表示
-            for msg in conversation[-4:]:  # 最後の2往復
+            # 会話履歴をより詳しく表示（最後の3往復 = 6メッセージ）
+            print("\n=== 直近の会話履歴 ===")
+            display_start = max(0, len(conversation) - 6)
+            for i, msg in enumerate(conversation[display_start:], start=1):
                 role = "あなた" if msg["role"] == "user" else "専門家"
-                content = msg["content"][:100] + "..." if len(msg["content"]) > 100 else msg["content"]
-                print(f"{role}: {content}")
+                content = msg["content"]
+                
+                # 長いメッセージは改行して表示
+                if len(content) > 150:
+                    content = content[:150] + "..."
+                
+                print(f"\n[{i}] {role}:")
+                print(f"    {content}")
             
-            print("\n--- 会話を続けます ---")
+            print("\n" + "="*50)
+            print("会話を続けます...")
+            print("="*50)
             
-            # 既存の会話履歴をコンテキストに含める
-            context = loader.format_for_agent(conversation[-10:])  # 直近10メッセージ
+            # 既存の会話履歴をコンテキストに含める（全履歴）
+            context = loader.format_for_agent(conversation)  # 全メッセージ
         else:
             print("過去の会話が見つかりませんでした。新規セッションとして開始します。")
     else:
@@ -121,8 +130,8 @@ async def main():
     
     # インメモリSQLiteSessionを作成
     if resume_session_id:
-        # Langfuseから詳細な履歴を復元（複数エージェント対応）
-        session = await AdvancedSessionBuilder.rebuild_from_langfuse_advanced(session_id)
+        # Langfuseから履歴を復元
+        session = await SessionBuilder.rebuild_from_langfuse(session_id)
     else:
         # 新規セッション
         session = SQLiteSession(session_id)
