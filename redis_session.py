@@ -3,9 +3,15 @@ Redis-based Session implementation for OpenAI Agents SDK
 """
 import json
 import os
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, TYPE_CHECKING
 import redis.asyncio as redis
 from dotenv import load_dotenv
+
+# TResponseInputItemは実行時には単なるdictなので、型エイリアスとして定義
+if TYPE_CHECKING:
+    from agents.items import TResponseInputItem
+else:
+    TResponseInputItem = Dict[str, Any]
 
 load_dotenv()
 
@@ -37,7 +43,7 @@ class RedisSession:
             )
         return self._client
     
-    async def get_items(self, limit: Optional[int] = None) -> List[Dict[str, Any]]:
+    async def get_items(self, limit: Optional[int] = None) -> List[TResponseInputItem]:
         """
         Retrieve conversation items from Redis
         
@@ -59,7 +65,7 @@ class RedisSession:
         # Parse JSON strings back to dictionaries
         return [json.loads(item) for item in items]
     
-    async def add_items(self, items: List[Dict[str, Any]]) -> None:
+    async def add_items(self, items: List[TResponseInputItem]) -> None:
         """
         Add conversation items to Redis
         
@@ -81,7 +87,7 @@ class RedisSession:
         ttl_seconds = int(os.getenv("REDIS_SESSION_TTL", "604800"))  # 7 days
         await client.expire(self._key, ttl_seconds)
     
-    async def pop_item(self) -> Optional[Dict[str, Any]]:
+    async def pop_item(self) -> Optional[TResponseInputItem]:
         """
         Remove and return the most recent conversation item
         

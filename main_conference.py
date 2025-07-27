@@ -64,11 +64,16 @@ def create_expert_agents(config: Dict[str, Any]) -> List[Agent]:
 
 async def save_message(session: RedisSession, role: str, content: str, speaker: Optional[str] = None):
     """発言をセッションに保存"""
+    # OpenAI APIの標準フォーマットに準拠
     message = {
         "role": role,
-        "content": content,
-        "speaker": speaker  # 発言者の名前
+        "content": content
     }
+    
+    # 発言者情報はcontentに含める（会議形式を維持）
+    if speaker and role == "assistant":
+        message["content"] = f"【{speaker}】\n{content}"
+    
     await session.add_items([message])
 
 
@@ -82,13 +87,26 @@ async def display_recent_conversation(session: RedisSession, display_count: int 
     print(f"\n=== 直近の会議記録 ===")
     
     for i, item in enumerate(items, start=1):
-        speaker = item.get("speaker", "不明")
+        role = item.get("role", "")
         content = item.get("content", "")
+        
+        # 発言者を識別
+        if role == "user":
+            print(f"\n[{i}] 【ユーザー】")
+        elif role == "assistant" and content.startswith("【"):
+            # 発言者情報が含まれている場合は抽出して表示
+            lines = content.split('\n', 1)
+            if len(lines) > 0:
+                speaker_line = lines[0]  # 【発言者】の部分
+                actual_content = lines[1] if len(lines) > 1 else ""
+                print(f"\n[{i}] {speaker_line}")
+                content = actual_content
+        else:
+            print(f"\n[{i}] 【発言者】")
         
         if len(content) > 200:
             content = content[:200] + "..."
         
-        print(f"\n[{i}] 【{speaker}】")
         print(f"    {content}")
     
     print("\n" + "="*50)
@@ -174,15 +192,14 @@ async def main():
                 
                 print("\n" + "-"*50)
                 
-                # 司会者が応答
+                # 司会者が応答（会話履歴を含めて実行）
                 with logfire.span("facilitator-response") as span:
                     span.set_attribute("langfuse.session.id", session_id)
                     
-                    # 会話履歴なしで司会者を実行（司会者は現在の質問のみに基づいて判断）
                     result = await Runner.run(
                         facilitator,
                         user_input,
-                        session=None  # セッションを使わない
+                        session=session  # 会話履歴を含める
                     )
                 
                 facilitator_response = result.final_output
@@ -212,7 +229,7 @@ async def main():
                                 expert_result = await Runner.run(
                                     expert_dict[expert_name],
                                     question,
-                                    session=None  # セッションを使わない
+                                    session=session  # 会話履歴を含める
                                 )
                                 
                                 expert_response = expert_result.final_output
